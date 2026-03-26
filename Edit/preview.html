@@ -10,12 +10,52 @@
     <style>
         html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
         #storymap-container { width: 100%; height: 100%; }
+        
+        /* Custom Marker Styling */
+        .custom-marker-img {
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            border: 1px solid rgba(255,255,255,0.8);
+            box-sizing: border-box;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+        
+        /* High-specificity rule to hide the default font icon font when we have a thumbnail */
+        .vco-map .leaflet-marker-icon:has(.custom-marker-img):after {
+            content: none !important;
+            display: none !important;
+            opacity: 0 !important;
+        }
+
+        .vco-map .leaflet-marker-icon:hover .custom-marker-img {
+            transform: scale(1.1);
+        }
+        
+        /* Ensure the marker container allows our custom div to be visible */
+        .vco-map .leaflet-marker-icon {
+            overflow: visible !important;
+        }
     </style>
 </head>
 <body>
     <div id="storymap-container"></div>
     <script>
         let storymapInstance = null;
+
+        const getThumbnailUrl = (url) => {
+            if (!url) return null;
+            // YouTube Regex
+            const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+            const ytMatch = url.match(ytRegex);
+            if (ytMatch && ytMatch[1]) {
+                return `https://img.youtube.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+            }
+            // Local path fix (preview is in Edit/ folder)
+            if (url.startsWith('storymap_data/')) {
+                return '../' + url;
+            }
+            return url;
+        };
 
         // Check for ID in query string for standalone preview
         const urlParams = new URLSearchParams(window.location.search);
@@ -30,6 +70,14 @@
                     return res.json();
                 })
                 .then(data => {
+                    // Fix paths for standalone mode too
+                    if (data.storymap && data.storymap.slides) {
+                        data.storymap.slides.forEach(slide => {
+                            if (slide.media && slide.media.url && slide.media.url.startsWith('storymap_data/')) {
+                                slide.media.url = '../' + slide.media.url;
+                            }
+                        });
+                    }
                     storymapInstance = new KLStoryMap.StoryMap('storymap-container', data);
                     window.onresize = function() {
                         if(storymapInstance) {
@@ -60,6 +108,17 @@
                 return;
             }
             
+            // --- FIX PATHS ---
+            // Local paths like "storymap_data/images/..." need to be "../storymap_data/images/..." 
+            // because this preview is inside the Edit/ folder.
+            if (data.storymap.slides) {
+                data.storymap.slides.forEach(slide => {
+                    if (slide.media && slide.media.url && slide.media.url.startsWith('storymap_data/')) {
+                        slide.media.url = '../' + slide.media.url;
+                    }
+                });
+            }
+
             console.log('Preview: Received data, initializing map...');
 
             // Clear existing content to ensure a clean slate
@@ -93,73 +152,63 @@
                     // Signal to parent that map is re-initialized
                     window.parent.postMessage({ type: 'map-loaded' }, '*');
 
-                    // --- CUSTOM MARKER ICONS ---
-                    // Replace default font icons with the slide's media image if available
-                    const applyCustomMarkers = () => {
-                        if (!storymapInstance || !storymapInstance.markers) return;
+                    // --- CUSTOM MARKER ICONS (Persistent Sync) ---
+                    const syncMarkers = () => {
+                        if (!storymapInstance || !storymapInstance.map) return;
 
-                        storymapInstance.markers.forEach((marker, index) => {
-                            const slide = data.storymap.slides[index];
-                            // Check if slide has a media URL
-                            if (slide && slide.media && slide.media.url) {
-                                const imageUrl = slide.media.url;
+                        // Iterate through all layers on the Leaflet map
+                        storymapInstance.map.eachLayer(layer => {
+                            // Identify StoryMap markers by their classes
+                            if (layer._icon && (layer._icon.classList.contains('vco-mapmarker') || layer._icon.classList.contains('vco-mapmarker-active'))) {
+                                const iconEl = layer._icon;
+                                const title = iconEl.getAttribute('title');
 
-                                const updateIcon = () => {
-                                    const iconEl = marker._icon;
-                                    if (!iconEl) return;
+                                // Find the corresponding slide data by matching the title (headline)
+                                const slide = data.storymap.slides.find(s => s.text && s.text.headline === title);
 
-                                    // 1. Remove default icon classes (e.g. vco-icon-image) to hide the font icon
-                                    // This prevents the default symbol from showing behind or around our image
-                                    Array.from(iconEl.classList).forEach(cls => {
-                                        if (cls.startsWith('vco-icon-')) {
-                                            iconEl.classList.remove(cls);
-                                        }
-                                    });
+                                if (slide && slide.media && slide.media.url) {
+                                    const imageUrl = getThumbnailUrl(slide.media.url);
 
-                                    // 2. Inject a div with the background image
+                                    // Inject or update the thumbnail div
                                     let imgDiv = iconEl.querySelector('.custom-marker-img');
-                                    if (!imgDiv) {
-                                        imgDiv = document.createElement('div');
+                                    if (!imgDiv) {                                        imgDiv = document.createElement('div');
                                         imgDiv.className = 'custom-marker-img';
-                                        
-                                        // Styling to make the image round and centered
-                                        // This replaces the role of the ::before pseudo-element
+
+                                        // Precise styling to fit inside the StoryMap pin circle
                                         Object.assign(imgDiv.style, {
-                                            width: '100%',
-                                            height: '100%',
+                                            width: '28px',
+                                            height: '28px',
                                             backgroundImage: `url('${imageUrl}')`,
                                             backgroundSize: 'cover',
                                             backgroundPosition: 'center',
-                                            borderRadius: '50%',
+                                            borderRadius: '6px',
                                             position: 'absolute',
-                                            top: '0',
-                                            left: '0',
-                                            zIndex: '10',
-                                            boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.1)' // Subtle border
+                                            top: '5px',
+                                            left: '50%',
+                                            marginLeft: '-14px',
+                                            zIndex: '10'
                                         });
-                                        
                                         iconEl.appendChild(imgDiv);
                                     } else {
-                                        // Update URL if it changed
-                                        imgDiv.style.backgroundImage = `url('${imageUrl}')`;
+                                        // Use dataset to avoid redundant background updates
+                                        if (imgDiv.dataset.url !== imageUrl) {
+                                            imgDiv.style.backgroundImage = `url('${imageUrl}')`;
+                                            imgDiv.dataset.url = imageUrl;
+                                        }
                                     }
-                                };
-
-                                // Apply immediately
-                                updateIcon();
-                                
-                                // Re-apply if the marker is re-added to the map (e.g. after zoom)
-                                marker.on('add', updateIcon);
+                                }
                             }
                         });
                     };
-                    
-                    // Run with a small delay to ensure markers are rendered in DOM
-                    setTimeout(applyCustomMarkers, 200);
 
-                }, 10);
-            } catch (e) {
-                console.error("Preview: Error rendering map", e);
+                    // Run synchronization immediately and then every 500ms to handle 
+                    // StoryMapJS internal DOM updates (like slide changes or zoom)
+                    syncMarkers();
+                    if (window.markerSyncInterval) clearInterval(window.markerSyncInterval);
+                    window.markerSyncInterval = setInterval(syncMarkers, 500);
+
+                    }, 10);
+                    } catch (e) {                console.error("Preview: Error rendering map", e);
                 // We don't want to wipe the body here either
                 const container = document.getElementById('storymap-container');
                 if (container) container.innerHTML = '<div style="padding:20px; color:red;">Error rendering map: ' + e.message + '</div>';

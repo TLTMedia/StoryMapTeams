@@ -35,6 +35,15 @@
         /* Animation Classes */
         .slide-in-right { animation: slideInRight 0.3s ease-out forwards; }
         .slide-out-right { animation: slideOutRight 0.3s ease-in forwards; }
+
+        /* WYSIWYG Placeholder */
+        [contenteditable=true]:empty:before {
+            content: attr(data-placeholder);
+            color: #cbd5e1;
+            pointer-events: none;
+            display: block;
+        }
+        #edit-text a { color: #059669; text-decoration: underline; }
     </style>
 </head>
 <body class="text-slate-800">
@@ -151,8 +160,28 @@
                             <div>
                                 <input type="text" id="edit-headline" class="w-full bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 p-4 transition-all shadow-sm text-3xl font-bold text-slate-800 placeholder-slate-300 leading-tight" placeholder="Headline">
                             </div>
-                            <div>
-                                <textarea id="edit-text" rows="8" class="w-full bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 p-4 transition-all shadow-sm text-lg text-slate-600 leading-relaxed placeholder-slate-300 resize-none" placeholder="Tell your story..."></textarea>
+                            <div class="bg-stone-50 border border-stone-300 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all shadow-sm">
+                                <!-- WYSIWYG Toolbar -->
+                                <div class="flex items-center space-x-1 p-2 border-b border-stone-200 bg-white/50 backdrop-blur-sm">
+                                    <button type="button" id="btn-bold" class="w-9 h-9 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center text-slate-500 transition-colors" title="Bold (Ctrl+B)">
+                                        <i class="fas fa-bold text-xs"></i>
+                                    </button>
+                                    <button type="button" id="btn-italic" class="w-9 h-9 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center text-slate-500 transition-colors" title="Italic (Ctrl+I)">
+                                        <i class="fas fa-italic text-xs"></i>
+                                    </button>
+                                    <button type="button" id="btn-underline" class="w-9 h-9 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center text-slate-500 transition-colors" title="Underline (Ctrl+U)">
+                                        <i class="fas fa-underline text-xs"></i>
+                                    </button>
+                                    <div class="w-px h-4 bg-stone-200 mx-1"></div>
+                                    <button type="button" id="btn-link" class="w-9 h-9 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center text-slate-500 transition-colors" title="Insert Link">
+                                        <i class="fas fa-link text-xs"></i>
+                                    </button>
+                                    <button type="button" id="btn-unlink" class="w-9 h-9 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 flex items-center justify-center text-slate-500 transition-colors" title="Remove Link">
+                                        <i class="fas fa-unlink text-xs"></i>
+                                    </button>
+                                </div>
+                                <!-- Editable Area -->
+                                <div id="edit-text" contenteditable="true" class="w-full min-h-[250px] p-4 text-lg text-slate-600 leading-relaxed outline-none overflow-y-auto" data-placeholder="Tell your story..."></div>
                             </div>
                         </div>
 
@@ -380,10 +409,30 @@
 
             document.getElementById('back-to-list').addEventListener('click', showList);
             document.getElementById('add-slide-fab').addEventListener('click', () => {
+                // Calculate average coordinates from existing slides
+                let avgLat = 0;
+                let avgLon = 0;
+                let count = 0;
+
+                if (storyMapData?.storymap?.slides) {
+                    storyMapData.storymap.slides.forEach(slide => {
+                        if (slide.location && typeof slide.location.lat === 'number' && typeof slide.location.lon === 'number') {
+                            avgLat += slide.location.lat;
+                            avgLon += slide.location.lon;
+                            count++;
+                        }
+                    });
+                }
+
+                if (count > 0) {
+                    avgLat /= count;
+                    avgLon /= count;
+                }
+
                 // Create new slide
                 const newSlide = {
                     text: { headline: "New Slide", text: "" },
-                    location: { lat: 0, lon: 0 }, // Default
+                    location: { lat: avgLat, lon: avgLon },
                     media: { url: "" }
                 };
                 if (!storyMapData.storymap.slides) storyMapData.storymap.slides = [];
@@ -464,7 +513,7 @@
                     el.className = 'relative flex items-center p-3 bg-slate-100 rounded-xl border border-slate-200 shadow-sm transition-all cursor-pointer mb-3 group select-none hover:bg-white hover:border-emerald-300 hover:shadow-md hover:-translate-y-0.5';
                     const headline = slide.text?.headline || (slide.type === 'overview' ? 'Overview' : 'Untitled');
                     const isOverview = slide.type === 'overview';
-                    const mediaUrl = slide.media?.url;
+                    const mediaUrl = getThumbnailUrl(slide.media?.url);
                     
                     const thumbnailHtml = mediaUrl 
                         ? `<img src="${mediaUrl}" class="w-full h-full object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
@@ -504,7 +553,7 @@
                 if (!slide) return;
 
                 editHeadline.value = slide.text?.headline || '';
-                editText.value = slide.text?.text || '';
+                editText.innerHTML = slide.text?.text || '';
                 
                 editMediaUrl.value = slide.media?.url || '';
                 editMediaCaption.value = slide.media?.caption || '';
@@ -547,10 +596,6 @@
                 if (!slide[key]) slide[key] = {};
                 slide[key][subKey] = value;
                 
-                // Debounce map update? For now, instant for text, deferred for heavy stuff?
-                // Actually, let's just update internal data, map only needs refresh on heavy changes.
-                // But user expects to see title change in sidebar if we were showing it live.
-                
                 updateSaveStatus('Unsaved changes');
             };
 
@@ -558,7 +603,23 @@
                 updateCurrentSlide('text', 'headline', e.target.value);
             });
             editText.addEventListener('input', (e) => {
-                updateCurrentSlide('text', 'text', e.target.value);
+                updateCurrentSlide('text', 'text', e.target.innerHTML);
+            });
+
+            // --- WYSIWYG TOOLBAR ACTIONS ---
+            const formatDoc = (cmd, value = null) => {
+                document.execCommand(cmd, false, value);
+                editText.focus();
+                updateCurrentSlide('text', 'text', editText.innerHTML);
+            };
+
+            document.getElementById('btn-bold').addEventListener('click', () => formatDoc('bold'));
+            document.getElementById('btn-italic').addEventListener('click', () => formatDoc('italic'));
+            document.getElementById('btn-underline').addEventListener('click', () => formatDoc('underline'));
+            document.getElementById('btn-unlink').addEventListener('click', () => formatDoc('unlink'));
+            document.getElementById('btn-link').addEventListener('click', () => {
+                const url = prompt("Enter URL:", "https://");
+                if (url) formatDoc('createLink', url);
             });
             
             editMediaUrl.addEventListener('change', (e) => { // Use change for URL to avoid spamming
@@ -622,6 +683,24 @@
                 let tmp = document.createElement("DIV");
                 tmp.innerHTML = html;
                 return tmp.textContent || tmp.innerText || "";
+            };
+
+            const getThumbnailUrl = (url) => {
+                if (!url) return null;
+
+                // YouTube Regex
+                const ytRegex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+                const ytMatch = url.match(ytRegex);
+                if (ytMatch && ytMatch[1]) {
+                    return `https://img.youtube.com/vi/${ytMatch[1]}/mqdefault.jpg`;
+                }
+
+                // Fix relative paths for thumbnails in the sidebar
+                if (url.startsWith('storymap_data/')) {
+                    return '../' + url;
+                }
+
+                return url;
             };
 
             // --- EVENT LISTENERS (MISC) ---

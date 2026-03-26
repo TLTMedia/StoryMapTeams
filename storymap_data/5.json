@@ -11,11 +11,11 @@
         "slides": [
             {
                 "text": {
-                    "headline": "XD LOL",
+                    "headline": "Welcome to Paris",
                     "text": "<p>Welcome!<\/p>"
                 },
                 "media": {
-                    "url": "",
+                    "url": "https:\/\/upload.wikimedia.org\/wikipedia\/en\/thumb\/c\/c3\/Flag_of_France.svg\/1280px-Flag_of_France.svg.png",
                     "caption": "",
                     "credit": ""
                 },
@@ -31,7 +31,20 @@
                     "text": "A sample point."
                 },
                 "media": {
-                    "url": "https:\/\/placehold.co\/800x600\/E8E8E8\/000000?text=Eiffel+Tower"
+                    "url": "https:\/\/upload.wikimedia.org\/wikipedia\/commons\/thumb\/8\/85\/Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg\/500px-Tour_Eiffel_Wikimedia_Commons_%28cropped%29.jpg"
+                }
+            },
+            {
+                "text": {
+                    "headline": "Notre-Dame Cathedral of Paris",
+                    "text": "Towering, 12th-century cathedral with flying buttresses & gargoyles, setting for Hugo's novel."
+                },
+                "location": {
+                    "lat": 48.85292228452615,
+                    "lon": 2.34985918162663
+                },
+                "media": {
+                    "url": "https:\/\/www.youtube.com\/watch?v=kOjEiS88meI"
                 }
             }
         ]
